@@ -147,3 +147,5 @@ This colab shows how to:
 
 This is not an official Google product.
 
+## Adding in the FAVORPLUS mechanism and an option to switch to the fast attention. 
+
