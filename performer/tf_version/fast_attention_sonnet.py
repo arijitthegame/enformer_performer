@@ -105,10 +105,10 @@ class DenseEinsum(snt.Module):
     # This is only saved for testing purposes.
     self._kernel_shape = (
         input_shape[free_input_dims:].concatenate(self._output_shape))
-    print(self._kernel_shape)
+  #  print(self._kernel_shape)
        
     self._kernel = snt.initializers.VarianceScaling(scale=1.0, mode='fan_avg', distribution='uniform').__call__(self._kernel_shape, dtype=float)
-    print(self._kernel)
+    return self._einsum_string, self._kernel
           # "kernel", shape=self._kernel_shape,
           # initializer=self._kernel_initializer,
           # regularizer=self._kernel_regularizer,
@@ -159,10 +159,10 @@ class DenseEinsum(snt.Module):
 
   def __call__(self, inputs):
   
-    self._kernel = self.build(inputs.shape)
-    print(self.build(inputs.shape))
-    self._einsum_string = self._build_einsum_string(inputs.shape.rank - self._num_summed_dimensions, self._num_summed_dimensions, len(self._output_shape))
-    print(self._einsum_string)
+    self._einsum_string, self._kernel = self.build(inputs.shape)
+   # print(self.build(inputs.shape))
+   # self._einsum_string = self._build_einsum_string(inputs.shape.rank - self._num_summed_dimensions, self._num_summed_dimensions, len(self._output_shape))
+  #  print(self._einsum_string)
     ret = tf.einsum(self._einsum_string, inputs, self._kernel)
     if self._use_bias:
       ret += self._bias
