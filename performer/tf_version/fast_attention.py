@@ -487,6 +487,7 @@ class Attention(tf.keras.layers.Layer):
       seed = tf.dtypes.cast(seed, tf.int32)
       projection_matrix = create_projection_matrix(
           self.nb_random_features, dim, seed=seed)
+      print(projection_matrix.shape, self.nb_random_features)
 
     if cache is not None:
       # Combine cached keys and values with new keys and values.

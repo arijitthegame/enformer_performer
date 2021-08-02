@@ -181,7 +181,8 @@ class Attention(snt.Module):
                kernel_transformation=softmax_kernel_transformation,
                numerical_stabilizer=0.001,
                causal=False,
-               projection_matrix_type=None,
+               bias=False,
+              # projection_matrix_type=None,
                nb_random_features=0):
     """Initialize Attention.
 
@@ -210,8 +211,9 @@ class Attention(snt.Module):
     self.kernel_transformation = kernel_transformation
     self.numerical_stabilizer = numerical_stabilizer
     self.causal = causal
-    self.projection_matrix_type = projection_matrix_type
+  #  self.projection_matrix_type = projection_matrix_type
     self.nb_random_features = nb_random_features
+    self.bias=bias
 
   def build(self, input_shape):
     """Builds the layer."""
@@ -293,14 +295,17 @@ class Attention(snt.Module):
     query = self.query_dense_layer(query_input)
     key = self.key_dense_layer(source_input)
     value = self.value_dense_layer(source_input)
+    print(query.shape, key.shape, value.shape)
 
-    if self.projection_matrix_type is None:
-      projection_matrix = None
-    else:
-      dim = query.shape[-1]
-      seed = tf.math.ceil(tf.math.abs(tf.math.reduce_sum(query) * BIG_CONSTANT))
-      seed = tf.dtypes.cast(seed, tf.int32)
-      projection_matrix = create_projection_matrix(
+#     if self.projection_matrix_type is None:
+#       projection_matrix = None
+ #   else:
+    dim = query.shape[-1]
+    seed = tf.math.ceil(tf.math.abs(tf.math.reduce_sum(query) * BIG_CONSTANT))
+    seed = tf.dtypes.cast(seed, tf.int32)
+    print(dim, seed)
+    print(self.nb_random_features)
+    projection_matrix = create_projection_matrix(
           self.nb_random_features, dim, seed=seed)
 
     if cache is not None:
@@ -336,8 +341,9 @@ class SelfAttention(Attention):
 
   def __call__(self,
            query_input,
-           bias,
+         
            training,
+           bias=False,
            cache=None,
            decode_loop_step=None):
     return super(SelfAttention, self).__call__(query_input, query_input, bias,
