@@ -2,11 +2,52 @@ import math
 import numpy as np
 import tensorflow as tf
 import sonnet as snt
-from fast_attention import create_projection_matrix, favor_attention, softmax_kernel_transformation
+from fast_attention import create_projection_matrix,  softmax_kernel_transformation, causal_denominator, noncausal_denominator, causal_numerator, noncausal_numerator
 
 BIG_CONSTANT = 1e8
 
 _CHR_IDX = ["a", "b", "c", "d", "e", "f", "g", "h", "i", "j", "k", "l", "m"]
+
+def favor_attention(query,
+                    key,
+                    value,
+                    kernel_transformation,
+                    causal,
+                    projection_matrix):
+  """Computes FAVOR normalized attention.
+
+  Args:
+    query: query tensor.
+    key: key tensor.
+    value: value tensor.
+    kernel_transformation: transformation used to get finite kernel features.
+    causal: whether attention is causal or not.
+    projection_matrix: projection matrix to be used.
+
+  Returns:
+    FAVOR normalized attention.
+  """
+  query_prime = kernel_transformation(query, True,
+                                      projection_matrix)  # [B,L,H,M]
+  key_prime = kernel_transformation(key, False, projection_matrix)  # [B,L,H,M]
+  query_prime = tf.transpose(query_prime, [1, 0, 2, 3])  # [L,B,H,M]
+  key_prime = tf.transpose(key_prime, [1, 0, 2, 3])  # [L,B,H,M]
+  value = tf.transpose(value, [1, 0, 2, 3])  # [L,B,H,D]
+
+  if causal:
+    av_attention = causal_numerator(query_prime, key_prime, value)
+    attention_normalizer = causal_denominator(query_prime, key_prime)
+  else:
+    av_attention = noncausal_numerator(query_prime, key_prime, value)
+    attention_normalizer = noncausal_denominator(query_prime, key_prime)
+  # TODO(kchoro): Add more comments.
+  av_attention = tf.transpose(av_attention, [1, 0, 2, 3])
+  attention_normalizer = tf.transpose(attention_normalizer, [1, 0, 2])
+  attention_normalizer = tf.expand_dims(attention_normalizer,
+                                        len(attention_normalizer.shape))
+  return av_attention / attention_normalizer
+
+  return data_dash
 
 class DenseEinsum(snt.Module):
   """A densely connected layer that uses tf.einsum as the backing computation.
@@ -181,7 +222,6 @@ class Attention(snt.Module):
                kernel_transformation=softmax_kernel_transformation,
                numerical_stabilizer=0.001,
                causal=False,
-               projection_matrix_type=None,
                nb_random_features=0):
     """Initialize Attention.
 
@@ -210,7 +250,6 @@ class Attention(snt.Module):
     self.kernel_transformation = kernel_transformation
     self.numerical_stabilizer = numerical_stabilizer
     self.causal = causal
-    self.projection_matrix_type = projection_matrix_type
     self.nb_random_features = nb_random_features
 
   def build(self, input_shape):
@@ -294,13 +333,11 @@ class Attention(snt.Module):
     key = self.key_dense_layer(source_input)
     value = self.value_dense_layer(source_input)
 
-    if self.projection_matrix_type is None:
-      projection_matrix = None
-    else:
-      dim = query.shape[-1]
-      seed = tf.math.ceil(tf.math.abs(tf.math.reduce_sum(query) * BIG_CONSTANT))
-      seed = tf.dtypes.cast(seed, tf.int32)
-      projection_matrix = create_projection_matrix(
+    
+    dim = query.shape[-1]
+    seed = tf.math.ceil(tf.math.abs(tf.math.reduce_sum(query) * BIG_CONSTANT))
+    seed = tf.dtypes.cast(seed, tf.int32)
+    projection_matrix = create_projection_matrix(
           self.nb_random_features, dim, seed=seed)
 
     if cache is not None:
