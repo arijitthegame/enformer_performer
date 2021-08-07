@@ -1,5 +1,6 @@
 ''''
-Attention pooling will crash if the batch size is not a multiple of 2^7 where 7 = #filter_list. For general seq lengths use 'max' pooling.
+Attention pooling will crash if the batch size is not a multiple of 2^7 where 7 = #filter_list. For general seq lengths use 'max' pooling. 
+Also your seq length needs to be large enough about 150k, or make the target length smaller. The CROP 1D function will throw errors. 
 '''
 
 
