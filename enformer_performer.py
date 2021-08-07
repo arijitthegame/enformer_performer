@@ -1,7 +1,13 @@
+''''
+Attention pooling will crash if the batch size is not a multiple of 2^7 where 7 = #filter_list. For general seq lengths use 'max' pooling.
+'''
+
+
+
 import inspect
 from typing import Any, Callable, Dict, Optional, Text, Union, Iterable
 
-#import attention_module
+
 import numpy as np
 import tensorflow as tf
 import tensorflow_addons as tfa
@@ -268,5 +274,10 @@ if __name__ == '__main__':
   x = tf.random.uniform(shape=(1,18000,4))
   model = Enformer(channels=1536, num_heads=2, num_transformer_layers=2, pooling_type='max')
   print(model(x, training=True))
+
+
+  y = tf.random.uniform(shape=(1,131072,4))
+  model = Enformer(channels=1536, num_heads=2, num_transformer_layers=2, pooling_type='attention') 
+  print(model(y, training=True))
 
   #TODO: CONV Tower crashes with pooling type 'attention
