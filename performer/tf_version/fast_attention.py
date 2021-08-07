@@ -148,7 +148,7 @@ def relu_kernel_transformation(data,
 
 def softmax_kernel_transformation(data,
                                   is_query,
-                                  projection_matrix=None,
+                                  projection_matrix,
                                   numerical_stabilizer=0.000001):
   """Computes random features for the softmax kernel using FAVOR+ mechanism.
 
@@ -167,6 +167,8 @@ def softmax_kernel_transformation(data,
   Returns:
     Corresponding kernel feature map.
   """
+  #changed the projection_matrix to not none
+  
   data_normalizer = 1.0 / (
       tf.math.sqrt(tf.math.sqrt(tf.dtypes.cast(data.shape[-1], tf.float32))))
   data = data_normalizer * data
@@ -324,7 +326,7 @@ def favor_attention(query,
                     value,
                     kernel_transformation,
                     causal,
-                    projection_matrix=None):
+                    projection_matrix):
   """Computes FAVOR normalized attention.
 
   Args:
@@ -369,7 +371,7 @@ class Attention(tf.keras.layers.Layer):
                kernel_transformation=relu_kernel_transformation,
                numerical_stabilizer=0.001,
                causal=False,
-               projection_matrix_type=None,
+              # projection_matrix_type=None,
                nb_random_features=0):
     """Initialize Attention.
 
@@ -398,8 +400,10 @@ class Attention(tf.keras.layers.Layer):
     self.kernel_transformation = kernel_transformation
     self.numerical_stabilizer = numerical_stabilizer
     self.causal = causal
-    self.projection_matrix_type = projection_matrix_type
+ #   self.projection_matrix_type = projection_matrix_type
     self.nb_random_features = nb_random_features
+
+## Removed projection matrix type since the call is throwing issues
 
   def build(self, input_shape):
     """Builds the layer."""
@@ -447,7 +451,7 @@ class Attention(tf.keras.layers.Layer):
   def call(self,
            query_input,
            source_input,
-           bias,
+        #   bias,       # remove bias as it will throw error in the call of enformer
            training,
            cache=None,
            decode_loop_step=None):
@@ -479,14 +483,14 @@ class Attention(tf.keras.layers.Layer):
     key = self.key_dense_layer(source_input)
     value = self.value_dense_layer(source_input)
 
-    if self.projection_matrix_type is None:
-      projection_matrix = None
-    else:
-      dim = query.shape[-1]
-      seed = tf.math.ceil(tf.math.abs(tf.math.reduce_sum(query) * BIG_CONSTANT))
-      seed = tf.dtypes.cast(seed, tf.int32)
-      projection_matrix = create_projection_matrix(
-          self.nb_random_features, dim, seed=seed)
+    # if self.projection_matrix_type is None:
+    #   projection_matrix = None                  #Had to remove this line.
+    # else:
+    dim = query.shape[-1]
+    seed = tf.math.ceil(tf.math.abs(tf.math.reduce_sum(query) * BIG_CONSTANT))
+    seed = tf.dtypes.cast(seed, tf.int32)
+    projection_matrix = create_projection_matrix(
+        self.nb_random_features, dim, seed=seed)
 
     if cache is not None:
       # Combine cached keys and values with new keys and values.
@@ -521,9 +525,11 @@ class SelfAttention(Attention):
 
   def call(self,
            query_input,
-           bias,
+         #  bias,
            training,
            cache=None,
            decode_loop_step=None):
-    return super(SelfAttention, self).call(query_input, query_input, bias,
+    return super(SelfAttention, self).call(query_input, query_input,
                                            training, cache, decode_loop_step)
+
+      # Removed bias in the call of super. 
