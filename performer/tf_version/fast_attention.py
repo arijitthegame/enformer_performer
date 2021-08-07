@@ -483,6 +483,7 @@ class Attention(tf.keras.layers.Layer):
     key = self.key_dense_layer(source_input)
     value = self.value_dense_layer(source_input)
 
+<<<<<<< HEAD
     # if self.projection_matrix_type is None:
     #   projection_matrix = None                  #Had to remove this line.
     # else:
@@ -491,6 +492,17 @@ class Attention(tf.keras.layers.Layer):
     seed = tf.dtypes.cast(seed, tf.int32)
     projection_matrix = create_projection_matrix(
         self.nb_random_features, dim, seed=seed)
+=======
+    if self.projection_matrix_type is None:
+      projection_matrix = None
+    else:
+      dim = query.shape[-1]
+      seed = tf.math.ceil(tf.math.abs(tf.math.reduce_sum(query) * BIG_CONSTANT))
+      seed = tf.dtypes.cast(seed, tf.int32)
+      projection_matrix = create_projection_matrix(
+          self.nb_random_features, dim, seed=seed)
+      print(projection_matrix.shape, self.nb_random_features)
+>>>>>>> de53f2b41caf94f5653d091f1d2f1335cf426ba1
 
     if cache is not None:
       # Combine cached keys and values with new keys and values.

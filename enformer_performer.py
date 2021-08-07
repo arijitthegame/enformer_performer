@@ -1,7 +1,7 @@
-# Reimplements the enformer in tensorflow with fast attention
 import inspect
 from typing import Any, Callable, Dict, Optional, Text, Union, Iterable
-import math
+
+#import attention_module
 import numpy as np
 import tensorflow as tf
 import tensorflow_addons as tfa
