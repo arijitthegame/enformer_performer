@@ -280,4 +280,3 @@ if __name__ == '__main__':
   model = Enformer(channels=1536, num_heads=2, num_transformer_layers=2, pooling_type='attention') 
   print(model(y, training=True))
 
-  #TODO: CONV Tower crashes with pooling type 'attention
