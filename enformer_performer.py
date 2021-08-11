@@ -22,6 +22,10 @@ SEQUENCE_LENGTH = 196_608
 BIN_SIZE = 128
 TARGET_LENGTH = 896
 
+'''
+Tensorflow implementation of adding in Favor plus to Enformer. 
+
+'''
 
 class Enformer(tf.keras.Model):
   """Main model."""
@@ -78,6 +82,8 @@ class Enformer(tf.keras.Model):
     filter_list = exponential_linspace_int(start=channels // 2, end=channels,
                                            num=6, divisible_by=128)
     
+    #TODO : Make num or len of list a hyperparameter. This will shorten this next stack. 
+    
     conv_tower = tf.keras.Sequential([
         tf.keras.Sequential([
             conv_block(num_filters, 5, padding='same'),
@@ -86,7 +92,7 @@ class Enformer(tf.keras.Model):
             ],
                    name=f'conv_tower_block_{i}')
         for i, num_filters in enumerate(filter_list)], name='conv_tower')
-# This block crashes in the attention pooling.
+
 
     # Transformer.
     def transformer_mlp():
