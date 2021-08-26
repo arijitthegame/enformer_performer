@@ -7,6 +7,7 @@ Requirements:
 *   pandas (1.2.3)
 *   tensoflow (2.4.1)
 *   tensorflow-hub (0.11.0)
+*   tensorflow-addons
 
 See `requirements.txt`.
 
