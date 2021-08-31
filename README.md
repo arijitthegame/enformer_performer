@@ -19,6 +19,8 @@ See `requirements.txt`.
 
 #TODO: REDO Experiments amd plots below
 
+#TODO: ADD Weight sharing as in ALBERT
+
 
 
 ------------------------
