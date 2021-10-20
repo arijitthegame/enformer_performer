@@ -421,7 +421,7 @@ class SPEFilter(nn.Module):
         code_size = qbar.shape[1:-3]
         query_size = queries.shape[1:-2]
         if (len(code_size) != len(query_size)
-            or any(
+            or tf.experimental.numpy.any(
                 tf.tensor(code_size) < tf.tensor(query_size)
             )):
                 raise ValueError(f'Keys/queries have length {query_size}, '
