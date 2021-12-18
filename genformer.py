@@ -35,7 +35,7 @@ class Enformer(tf.keras.Model):
                num_transformer_layers: int = 11,
                num_heads: int = 8,
                pooling_type: str = 'attention',
-               name: str = 'enformer'):
+               name: str = 'enformer', num_list: int = 5): #int=6 is what deepmind used
     """Enformer model.
     Args:
       channels: Number of convolutional filters and the overall 'width' of the
@@ -79,10 +79,11 @@ class Enformer(tf.keras.Model):
         pooling_module(pooling_type, pool_size=2),
     ], name='stem')
 
+    #passing in hyperparam num_list
     filter_list = exponential_linspace_int(start=channels // 2, end=channels,
-                                           num=6, divisible_by=128)
+                                           num = num_list, divisible_by=128)
     
-    #TODO : Make num or len of list a hyperparameter. This will shorten this next stack. 
+     
     
     conv_tower = tf.keras.Sequential([
         tf.keras.Sequential([
@@ -290,3 +291,4 @@ if __name__ == '__main__':
   model = Enformer(channels=1536, num_heads=2, num_transformer_layers=2, pooling_type='attention') 
   print(model(y, training=True))
 
+  #TODO: CONV Tower crashes with pooling type 'attention
