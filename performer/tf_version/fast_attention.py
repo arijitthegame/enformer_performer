@@ -21,6 +21,7 @@ import math
 import numpy as np
 import tensorflow as tf
 import util
+from spe_tf import *
 
 BIG_CONSTANT = 1e8
 
@@ -371,6 +372,7 @@ class Attention(tf.keras.layers.Layer):
                kernel_transformation=relu_kernel_transformation,
                numerical_stabilizer=0.001,
                causal=False,
+               relative_position=False,
               # projection_matrix_type=None,
                nb_random_features=0):
     """Initialize Attention.
@@ -400,6 +402,7 @@ class Attention(tf.keras.layers.Layer):
     self.kernel_transformation = kernel_transformation
     self.numerical_stabilizer = numerical_stabilizer
     self.causal = causal
+    self.relative_position = relative_position
  #   self.projection_matrix_type = projection_matrix_type
     self.nb_random_features = nb_random_features
 
@@ -446,6 +449,7 @@ class Attention(tf.keras.layers.Layer):
         "hidden_size": self.hidden_size,
         "num_heads": self.num_heads,
         "attention_dropout": self.attention_dropout,
+        "relative_position": self.relative_position,
     }
 
   def call(self,
@@ -488,12 +492,18 @@ class Attention(tf.keras.layers.Layer):
     #   projection_matrix = None                  #Had to remove this line.
     # else:
     dim = query.shape[-1]
+# Should this be added to def build part. @Dinko, please check.
+    if self.relative_position:
+      spe = SPEFilter(gated=True, code_shape=query.shape[2:]) #key, query and values should be 4d tensors
+      query, key = spe(query, key, pos_codes) #TODO: figure out how to pass the pos_codes. 
+    # The output dim of spe must match the key/query dimension. 
+    #TODO: Make sure that the output dim of spe is the same as the key/query dimension. Add an assert.
     seed = tf.math.ceil(tf.math.abs(tf.math.reduce_sum(query) * BIG_CONSTANT))
     seed = tf.dtypes.cast(seed, tf.int32)
     projection_matrix = create_projection_matrix(
         self.nb_random_features, dim, seed=seed)
 
-
+# Cache does not work with the spe.
     if cache is not None:
       # Combine cached keys and values with new keys and values.
       if decode_loop_step is not None:
