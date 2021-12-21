@@ -442,6 +442,8 @@ class Attention(tf.keras.layers.Layer):
         kernel_initializer=output_initializer,
         use_bias=False,
         name="output_transform")
+
+    self.spe = SPEFilter(gated=True, code_shape=(self.num_heads, size_per_head)) 
     super(Attention, self).build(input_shape)
 
   def get_config(self):
@@ -494,8 +496,8 @@ class Attention(tf.keras.layers.Layer):
     dim = query.shape[-1]
 # Should this be added to def build part. @Dinko, please check.
     if self.relative_position:
-      spe = SPEFilter(gated=True, code_shape=query.shape[2:]) #key, query and values should be 4d tensors
-      query, key = spe(query, key, pos_codes) #TODO: figure out how to pass the pos_codes. 
+     # spe = SPEFilter(gated=True, code_shape=query.shape[2:]) #key, query and values should be 4d tensors
+      query, key = self.spe(query, key, pos_codes) #TODO: figure out how to pass the pos_codes. 
     # The output dim of spe must match the key/query dimension. 
     #TODO: Make sure that the output dim of spe is the same as the key/query dimension. Add an assert.
     seed = tf.math.ceil(tf.math.abs(tf.math.reduce_sum(query) * BIG_CONSTANT))
