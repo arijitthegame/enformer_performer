@@ -66,7 +66,6 @@ class MultiheadSelfAttention(tf.keras.layers.Layer):
                  num_relative_position_features: Optional[int] = None,
                  positional_dropout_rate: float = 0.1,
                  zero_initialize: bool = True,
-                 use_projection_bias : bool = False,
                  initializer: Optional[tf.keras.initializers.Initializer] = None,
                  output_size = None,
                  name: str = None):
@@ -83,7 +82,6 @@ class MultiheadSelfAttention(tf.keras.layers.Layer):
         self._relative_position_functions = relative_position_functions
         self.zero_initialize = zero_initialize 
         self.output_size = output_size
-        self.use_projection_bias = use_projection_bias
         if num_relative_position_features is None:
           # num_relative_position_features needs to be divisible by the number of
           # relative positional functions *2 (for symmetric & asymmetric version).
@@ -203,7 +201,7 @@ class MultiheadSelfAttention(tf.keras.layers.Layer):
 
             # Add shifted relative logits to content logits.
             # [B, H, T', T]
-            content_logits = tf.einnsum('b h i d, b h j d -> b h i j', q + self.rel_content_bias, k)
+            content_logits = tf.einsum('b h i d, b h j d -> b h i j', q + self.rel_content_bias, k)
             # [B, H, T', 2T-1]
             relative_logits = tf.einsum('b h i d, h j d -> b h i j', q + self.rel_pos_bias, rel_k)
             #  [B, H, T', T]
@@ -462,6 +460,4 @@ if __name__ == '__main__':
         )
     )
     transformer_block(tf.ones((2, 1024, 96*8)), training=True)
-
-#TODO : Make sure all dims through DM attention and my attention match. 
 
