@@ -21,7 +21,7 @@ class TransformerBlock(tf.keras.Model):
                                             center=True,
                                             beta_initializer="zeros",
                                             gamma_initializer="ones")
-        self.mha = MultiheadAttention(**attention_kwargs)
+        self.mha = MultiheadSelfAttention(**attention_kwargs)
         self.mha_dropout = layers.Dropout(dropout_rate)
 
         self.mlp_ln = layers.LayerNormalization(axis=-1,
@@ -66,6 +66,7 @@ class MultiheadSelfAttention(tf.keras.layers.Layer):
                  num_relative_position_features: Optional[int] = None,
                  positional_dropout_rate: float = 0.1,
                  zero_initialize: bool = True,
+                 use_projection_bias : bool = False,
                  initializer: Optional[tf.keras.initializers.Initializer] = None,
                  output_size = None,
                  name: str = None):
@@ -82,6 +83,7 @@ class MultiheadSelfAttention(tf.keras.layers.Layer):
         self._relative_position_functions = relative_position_functions
         self.zero_initialize = zero_initialize 
         self.output_size = output_size
+        self.use_projection_bias = use_projection_bias
         if num_relative_position_features is None:
           # num_relative_position_features needs to be divisible by the number of
           # relative positional functions *2 (for symmetric & asymmetric version).
@@ -142,16 +144,16 @@ class MultiheadSelfAttention(tf.keras.layers.Layer):
         
         if self._relative_positions:
             self._r_k_layer = layers.Dense(
-                key_proj_size,
+                self.num_heads*self._key_size,
                 name='r_k_layer',
                 use_bias=False,
                 kernel_initializer=self._initializer)
-
+            
             self._r_w_bias = tf.Variable(
                 self._initializer([1, self.num_heads, 1, self._key_size],
                                 dtype=tf.float32),
                 name='r_w_bias')
-
+            
             self._r_r_bias = tf.Variable(
                 self._initializer([1, self.num_heads, 1, self._key_size],
                                 dtype=tf.float32),
@@ -167,7 +169,7 @@ class MultiheadSelfAttention(tf.keras.layers.Layer):
         seq_len = inputs.shape[1]
 
         # Compute q, k and v as multi-headed projections of the inputs.
-        n, h = inputs.shape[-2], self.num_heads,
+        n, h = inputs.shape[-2], self.num_heads
 
         q = self._q_layer(inputs)
         k = self._k_layer(inputs)
@@ -195,20 +197,22 @@ class MultiheadSelfAttention(tf.keras.layers.Layer):
                     positional_encodings, rate=self._positional_dropout_rate)
 
             # [1, H, 2T-1, K]
-          
             r_k = self._r_k_layer(positional_encodings)
-            r_k = rearrange(rel_k, 'b n (h d) -> (b h) n d', h = h)
+          #  (1,2*1024 -1, 512)
+        
 
             # Add shifted relative logits to content logits.
             # [B, H, T', T]
-            content_logits = tf.einsum('b h i d, b h j d -> b h i j', q + self.rel_content_bias, k)
+            content_logits = tf.einsum('b h i d, b h j d -> b h i j', q + self._r_w_bias, k)
             # [B, H, T', 2T-1]
-            relative_logits = tf.einsum('b h i d, h j d -> b h i j', q + self.rel_pos_bias, rel_k)
-            #  [B, H, T', T]
-            relative_logits = relative_shift(relative_logits)
-            logits = content_logits + relative_logits
+            r_k = rearrange(r_k, 'b n (h d) -> (b h) n d', h = h)
 
-            
+            relative_logits = tf.einsum('b h i d,  h j d -> b h i j', q + self._r_r_bias, r_k)
+            #  [B, H, T', T]
+
+            relative_logits = relative_shift(relative_logits)
+
+            logits = content_logits + relative_logits
         else:
             # [B, H, T', T]
             logits = tf.matmul(q, k, transpose_b=True)
@@ -222,7 +226,9 @@ class MultiheadSelfAttention(tf.keras.layers.Layer):
         # Transpose and reshape the output.
         out = tf.einsum('b h i j, b h j d -> b h i d', weights, v)
         out = rearrange(out, 'b h n d -> b n (h d)')
-        return self._embedding_layer(out)
+        out = self._embedding_layer(out)
+
+        return out
 
      
 
@@ -306,7 +312,7 @@ def positional_features_exponential(positions: tf.Tensor,
 
 
   
-  #  del bin_size  # Unused.
+    del bin_size  # Unused.
     if seq_length is None:
         seq_length = tf.reduce_max(tf.abs(positions)) + 1
     # Grid of half lifes from [3, seq_length / 2] with feature_size
@@ -327,8 +333,8 @@ def positional_features_central_mask(positions: tf.Tensor,
                                      seq_length: Optional[int] = None,
                                      bin_size: Optional[int] = None):
     """Positional features using a central mask (allow only central features)."""
-  #  del seq_length  # Unused.
-  #  del bin_size  # Unused.
+    del seq_length  # Unused.
+    del bin_size  # Unused.
     center_widths = tf.pow(2.0, tf.range(1, feature_size + 1, dtype=tf.float32))
     center_widths = center_widths - 1
     center_widths = _prepend_dims(center_widths, positions.shape.rank)
@@ -354,7 +360,7 @@ def positional_features_gamma(positions: tf.Tensor,
                               stddev=None,
                               start_mean=None):
     """Positional features computed using the gamma distributions."""
-    #idel bin_size  
+    del bin_size  # Unused.
     if seq_length is None:
         seq_length = tf.reduce_max(tf.abs(positions)) + 1
     if stddev is None:
@@ -380,8 +386,8 @@ def positional_features_cosine(positions: tf.Tensor,
                                seq_length: Optional[int] = None,
                                bin_size: Optional[int] = None):
     """Cosine positional features."""
-  #  del bin_size  # Unused.
-  #  del seq_length  # Unused.
+    del bin_size  # Unused.
+    del seq_length  # Unused.
     periodicity = 1.25 * tf.pow(2.0, tf.range(0, feature_size, dtype=tf.float32))
     periodicity = _prepend_dims(periodicity, positions.shape.rank)
 
@@ -396,8 +402,8 @@ def positional_features_linear_masks(positions: tf.Tensor,
                                      seq_length: Optional[int] = None,
                                      bin_size: Optional[int] = None):
     """Exponentially increasing point focuses."""
-  #  del bin_size  # Unused.
-  #  del seq_length  # Unused.
+    del bin_size  # Unused.
+    del seq_length  # Unused.
     distances = tf.range(0, feature_size, dtype=tf.float32)
     distances = _prepend_dims(distances, positions.shape.rank)
     outputs = tf.cast(distances == tf.abs(positions[..., tf.newaxis]),
@@ -414,8 +420,8 @@ def positional_features_sin_cos(positions: tf.Tensor,
                                 bin_size: Optional[int] = None,
                                 max_time=10000.0):
     """Sine/cosine positional encodings."""
-   # del bin_size  # Unused.
-   # del seq_length  # Unused.
+    del bin_size  # Unused.
+    del seq_length  # Unused.
     if feature_size % 2 != 0:
         raise ValueError('feature_size needs to be divisible by 2.')
     i = tf.range(0, feature_size, 2, dtype=tf.float32)
@@ -429,6 +435,7 @@ def positional_features_sin_cos(positions: tf.Tensor,
     tf.TensorShape(outputs.shape).assert_is_compatible_with(
       positions.shape + [feature_size])
     return outputs
+
 
 
 #TEST
