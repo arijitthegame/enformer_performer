@@ -388,12 +388,17 @@ class Attention(tf.keras.layers.Layer):
                hidden_size,
                num_heads,
                attention_dropout,
+               max_seq_length,
                kernel_transformation=relu_kernel_transformation,
                numerical_stabilizer=0.001,
                causal=False,
                relative_position=False,
               # projection_matrix_type=None,
-               nb_random_features=0):
+               nb_random_features=0,
+               use_rot_emb = False,
+               use_spe = False,
+               use_mask_pos = False,
+               eps = 1e-6):
     """Initialize Attention.
 
     Args:
@@ -424,6 +429,11 @@ class Attention(tf.keras.layers.Layer):
     self.relative_position = relative_position
  #   self.projection_matrix_type = projection_matrix_type
     self.nb_random_features = nb_random_features
+    self.max_seq_length = max_seq_length
+    self.use_rot_emb = use_rot_emb
+    self.use_spe = use_spe
+    self.use_mask_pos = use_mask_pos
+    self.eps = eps
 
 ## Removed projection matrix type since the call is throwing issues
 
@@ -462,7 +472,8 @@ class Attention(tf.keras.layers.Layer):
         use_bias=False,
         name="output_transform")
 
-    self.spe = SPEFilter(gated=True, code_shape=(self.num_heads, size_per_head)) 
+    if self.use_spe:
+       self.spe = SPEFilter(gated=True, code_shape=(self.heads, size_per_head))
     super(Attention, self).build(input_shape)
 
   def get_config(self):
@@ -470,7 +481,7 @@ class Attention(tf.keras.layers.Layer):
         "hidden_size": self.hidden_size,
         "num_heads": self.num_heads,
         "attention_dropout": self.attention_dropout,
-        "relative_position": self.relative_position,
+ # add in the rest of the configs
     }
 
   def call(self,
