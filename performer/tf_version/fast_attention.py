@@ -476,6 +476,7 @@ class Attention(tf.keras.layers.Layer):
   def call(self,
            query_input,
            source_input,
+           rpe,
         #   bias,       # remove bias as it will throw error in the call of enformer
            training,
            cache=None,
@@ -516,7 +517,7 @@ class Attention(tf.keras.layers.Layer):
 # Should this be added to def build part. @Dinko, please check.
     if self.relative_position:
      # spe = SPEFilter(gated=True, code_shape=query.shape[2:]) #key, query and values should be 4d tensors
-      query, key = self.spe(query, key, pos_codes) #TODO: figure out how to pass the pos_codes. 
+      query, key = self.spe(query, key, rpe) #TODO: figure out how to pass the pos_codes. 
     # The output dim of spe must match the key/query dimension. 
     #TODO: Make sure that the output dim of spe is the same as the key/query dimension. Add an assert.
     seed = tf.math.ceil(tf.math.abs(tf.math.reduce_sum(query) * BIG_CONSTANT))
@@ -558,11 +559,12 @@ class SelfAttention(Attention):
 
   def call(self,
            query_input,
+           rpe,
          #  bias,
            training,
            cache=None,
            decode_loop_step=None):
-    return super(SelfAttention, self).call(query_input, query_input,
+    return super(SelfAttention, self).call(query_input, query_input, rpe,
                                            training, cache, decode_loop_step)
 
       # Removed bias in the call of super. 
