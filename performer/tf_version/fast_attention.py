@@ -22,6 +22,7 @@ import numpy as np
 import tensorflow as tf
 import util
 from spe_tf import *
+from einops import rearrange, repeat
 
 BIG_CONSTANT = 1e8
 
@@ -360,6 +361,24 @@ def favor_attention(query,
   attention_normalizer = tf.expand_dims(attention_normalizer,
                                         len(attention_normalizer.shape))
   return av_attention / attention_normalizer
+
+#Add positional encodings.
+'''
+This is from rotoformer paper
+'''
+def rotate_every_two(x):
+    x = rearrange(x, '... (d j) -> ... d j', j = 2)
+    x1, x2 = tf.unstack(x, axis = -1)
+    x = tf.stack([-x2, x1], axis = -1)
+    return rearrange(x, '... d j -> ... (d j)')
+
+def apply_rotary_pos_emb(q, k, sinu_pos):
+    sinu_pos = rearrange(sinu_pos, '() n (j d) -> n j d', j = 2)
+    sin, cos = tf.unstack(sinu_pos, axis = -2)
+    sin, cos = map(lambda t: repeat(t, 'b n -> b (n j)', j = 2), (sin, cos))
+    q, k = map(lambda t: (t * cos) + (rotate_every_two_tf(t) * sin), (q, k))
+    return q, k
+
 
 
 class Attention(tf.keras.layers.Layer):
