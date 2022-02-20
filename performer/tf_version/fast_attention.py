@@ -23,6 +23,7 @@ import tensorflow as tf
 import util
 from spe_tf import *
 from einops import rearrange, repeat
+from functools import partial
 
 BIG_CONSTANT = 1e8
 
@@ -170,7 +171,6 @@ def softmax_kernel_transformation(data,
     Corresponding kernel feature map.
   """
   #changed the projection_matrix to not none
-  
   data_normalizer = 1.0 / (
       tf.math.sqrt(tf.math.sqrt(tf.dtypes.cast(data.shape[-1], tf.float32))))
   data = data_normalizer * data
@@ -376,26 +376,23 @@ def apply_rotary_pos_emb(q, k, sinu_pos):
     sinu_pos = rearrange(sinu_pos, '() n (j d) -> n j d', j = 2)
     sin, cos = tf.unstack(sinu_pos, axis = -2)
     sin, cos = map(lambda t: repeat(t, 'b n -> b (n j)', j = 2), (sin, cos))
-    q, k = map(lambda t: (t * cos) + (rotate_every_two_tf(t) * sin), (q, k))
+    q, k = map(lambda t: (t * cos) + (rotate_every_two(t) * sin), (q, k))
     return q, k
 
 class FixedPositionalEmbedding(tf.keras.layers.Layer):
     def __init__(self, dim, max_seq_len):
-        super().__init__()
-        self.dim = dim
-        self.max_seq_len = max_seq_len
+      super().__init__()
+      self.dim = dim
+      self.max_seq_len = max_seq_len
 
     def build(self, input_shape):
-        inv_freq = 1. / (10000 ** (tf.range(start=0, limit=self.dim, delta=2, dtype='float32') / self.dim))
-        position = tf.range(start=0, limit=self.max_seq_len, delta=1, dtype='float32')
-        sinusoid_inp = tf.einsum("i,j->ij", position, inv_freq)
-        self.emb = tf.concat((tf.math.sin(sinusoid_inp), tf.math.cos(sinusoid_inp)), axis=-1)
+        self.inv_freq = 1. / (10000 ** (tf.range(start=0, limit=self.dim, delta=2, dtype='float32') / self.dim))
+        self.position = tf.range(start=0, limit=self.max_seq_len, delta=1, dtype='float32')
+        self.sinusoid_inp = tf.einsum("i,j->ij", self.position, self.inv_freq)
+        self.emb = tf.concat((tf.math.sin(self.sinusoid_inp), tf.math.cos(self.sinusoid_inp)), axis=-1)
 
     def call(self, x):
         return self.emb[None, :x.shape[1], :]
-
-
-
 
 class Attention(tf.keras.layers.Layer):
   """Multi-headed attention layer."""
@@ -405,18 +402,16 @@ class Attention(tf.keras.layers.Layer):
                num_heads,
                attention_dropout,
                max_seq_length,
-               kernel_transformation=relu_kernel_transformation,
+               kernel_transformation=softmax_kernel_transformation,
                numerical_stabilizer=0.001,
                causal=False,
-               relative_position=False,
               # projection_matrix_type=None,
-               nb_random_features=0,
+               nb_random_features=16,
                use_rot_emb = False,
                use_spe = False,
                use_mask_pos = False,
                eps = 1e-6):
     """Initialize Attention.
-
     Args:
       hidden_size: int, output dim of hidden layer.
       num_heads: int, number of heads to repeat the same attention structure.
@@ -442,7 +437,6 @@ class Attention(tf.keras.layers.Layer):
     self.kernel_transformation = kernel_transformation
     self.numerical_stabilizer = numerical_stabilizer
     self.causal = causal
-    self.relative_position = relative_position
  #   self.projection_matrix_type = projection_matrix_type
     self.nb_random_features = nb_random_features
     self.max_seq_length = max_seq_length
@@ -489,7 +483,7 @@ class Attention(tf.keras.layers.Layer):
         name="output_transform")
 
     if self.use_spe:
-       self.spe = SPEFilter(gated=True, code_shape=(self.heads, size_per_head))
+       self.spe = SPEFilter(gated=True, code_shape=(self.num_heads, size_per_head))
 
     super(Attention, self).build(input_shape)
 
@@ -498,7 +492,7 @@ class Attention(tf.keras.layers.Layer):
         "hidden_size": self.hidden_size,
         "num_heads": self.num_heads,
         "attention_dropout": self.attention_dropout,
- # add in the rest of the configs
+ #TODO: add in the rest of the configs
     }
 
   def call(self,
@@ -510,7 +504,6 @@ class Attention(tf.keras.layers.Layer):
            cache=None,
            decode_loop_step=None):
     """Apply attention mechanism to query_input and source_input.
-
     Args:
       query_input: A tensor with shape [batch_size, length_query, hidden_size].
       source_input: A tensor with shape [batch_size, length_source,
@@ -526,20 +519,18 @@ class Attention(tf.keras.layers.Layer):
                sequence length for padded decode.
       decode_loop_step: An integer, step number of the decoding loop. Used only
         for autoregressive inference on TPU.
-
     Returns:
       Attention layer output with shape [batch_size, length_query, hidden_size]
     """
     # Linearly project the query, key and value using different learned
     # projections. Splitting heads is automatically done during the linear
     # projections --> [batch_size, length, num_heads, dim_per_head].
-    b, n, _ = query_input.shape 
+    b, n, _ = query_input.shape
     h = self.num_heads
 
     q = self.query_dense_layer(query_input)
     k = self.key_dense_layer(source_input)
     v = self.value_dense_layer(source_input)
-
 
     # if self.projection_matrix_type is None:
     #   projection_matrix = None                  #Had to remove this line.
@@ -548,24 +539,12 @@ class Attention(tf.keras.layers.Layer):
     tgt_len = k.shape[1]
 
     if self.use_rot_emb is True: 
-      q, k, v = map(lambda t: rearrange(t, 'b n (h d) -> b h n d', h = h), (q, k, v))
-      print("QQQ", q.shape)
-      print(rpe.shape)
-      q, k = apply_rotary_pos_emb(q, k, rpe)
+      q, k, v = map(lambda t: rearrange(t, 'b n h d -> b h n d', h = h), (q, k, v))
 
-# Should this be added to def build part. @Dinko, please check.
- if self.use_spe is True:
-    q, k = map(lambda t: rearrange(t, 'b n (h d) -> b n h d', h = h), (q, k))
-
-    print('Q after rearrange', q.shape)
-    print('K after rearrange', k.shape)
-    print('rpe', rpe[0].shape)
-    q, k = self.spe(q, k, rpe)
-    v = rearrange(v, 'b n (h d) -> b h n d', h = h)
-    print("V", v.shape)
-    q, k = map(lambda t: rearrange(t, 'b h n d -> b n h d'), (q, k))
-    print("final q", q.shape)
-    print('final k', k.shape)
+    if self.use_spe is True:
+      q, k = self.spe(q, k, rpe)
+      v = rearrange(v, 'b n h d -> b h n d', h = h)
+      q, k = map(lambda t: rearrange(t, 'b h n d -> b n h d'), (q, k))
 
     seed = tf.math.ceil(tf.math.abs(tf.math.reduce_sum(q) * BIG_CONSTANT))
     seed = tf.dtypes.cast(seed, tf.int32)
@@ -573,41 +552,36 @@ class Attention(tf.keras.layers.Layer):
         self.nb_random_features, dim, seed=seed)
 
     if self.use_mask_pos is True:
-      create_kernel = partial(softmax_kernel, projection_matrix = self.projection_matrix, device = q.device)
-      q, k = map(lambda t: rearrange(t, 'b n (h d) -> b h n d', h = h), (q, k))
+      create_kernel = partial(softmax_kernel_transformation, projection_matrix = projection_matrix)
+      q, k = map(lambda t: rearrange(t, 'b n h d -> b h n d', h = h), (q, k))
       q = create_kernel(q, is_query = True)
       k = create_kernel(k, is_query = False)
-      print("new kernel q", q.shape)
-      print("new kernel k", k.shape)
+ 
             # Compute the KV matrix
       k = rearrange(k, 'b h n d -> b h d n', h = h) #(batch, head, dim_head, seq_len) ([1, 8, 1000, 16])
-      v = rearrange(v,'b n (h d) -> b n h d', h = h) #(batch, seq_len, head, dim_head)
+     # v = rearrange(v,'b n (h d) -> b n h d', h = h) #(batch, seq_len, head, dim_head)
       q = rearrange(q, 'b h n d -> b n h d', h=h)
       kv = tf.einsum("nhdl,nlhm->nhmdl", k, v)
         
         # Efficient matrix multiplication
       u = tf.signal.rfft(rpe)             #rpe.shape = [num_heads, 2*tgt_len]
         
-      y = tf.signal.rfft(kv, length=2*tgt_len) #KV.shape  = [bsz, num_heads, v_dim, k_dim, tgt_len]            
+      y = tf.signal.rfft(kv, fft_length=[2*tgt_len]) #KV.shape  = [bsz, num_heads, v_dim, k_dim, tgt_len]            
       y = tf.einsum("hl,nhmdl->nhmdl", u, y)
       weighted_kv = tf.signal.irfft(y)[:, :,:,:,tgt_len:]
 
-      y1= tf.signal.rfft(k, n=2*tgt_len) #k.shape  = [bsz, num_heads, k_dim, tgt_len]
+      y1= tf.signal.rfft(k, fft_length=[2*tgt_len]) #k.shape  = [bsz, num_heads, k_dim, tgt_len]
       y1 = tf.einsum("hl,nhdl->nhdl", u, y1)
       weighted_k = tf.signal.irfft(y1)[:, :,:,tgt_len:]
     
         # Compute the normalizer
       Z = 1/(tf.einsum("nlhd,nhdl->nlh", q, weighted_k) + self.eps)
-      print('Almost there, qq', q.shape)
-      print('Almost there, kv', kv.shape)
-      print('Almost there, z', Z.shape)
       Z = rearrange(Z, 'n l h -> n h l') #transpose by keeping the batch dim fixed
     
         # Finally compute and return the new values
         # Equivalent to V = torch.einsum("nlhd,nhmdl,nhl->nlhm", Q, weighted_KV, Z)
       attention_output = tf.einsum("nlhd,nhmdl,nhl->nlhm", q, weighted_kv, Z)
-      print("Before rearrange out", attention.shape)
-      attention_output = rearrange(out, 'b n h d -> b n (h d)')
+      attention_output = rearrange(attention_output, 'b n h d -> b n (h d)')
             
 
 # Cache does not work with the spe.
@@ -636,6 +610,7 @@ class Attention(tf.keras.layers.Layer):
       attention_output = favor_attention(q, k, v,
                                        self.kernel_transformation, self.causal,
                                        projection_matrix)
+      attention_output = rearrange(attention_output, 'b h n d -> b n (h d)')
 
     attention_output = self.output_dense_layer(attention_output)
     return attention_output
@@ -669,14 +644,13 @@ class PerformerBlock(tf.keras.layers.Layer):
         self.attention = attention
         self.linear1 = tf.keras.layers.Dense(d_ff)
         self.linear2 = tf.keras.layers.Dense(d_model)
-        self.norm1 = tf.keras.layers.LayerNormalization(d_model)
-        self.norm2 = tf.keras.layers.LayerNormalization(d_model)
+        self.norm1 = tf.keras.layers.LayerNormalization()
+        self.norm2 = tf.keras.layers.LayerNormalization()
         self.dropout = tf.keras.layers.Dropout(dropout)
         self.activation = getattr(tf.keras.activations, activation)
 
     def call(self, x, rpe=None, **kwargs):
         """Apply the transformer encoder to the input x.
-
         Arguments
         ---------
             x: The input features of shape (N, L, E) where N is the batch size,
@@ -690,12 +664,14 @@ class PerformerBlock(tf.keras.layers.Layer):
 
         # Run self attention and add it to the input
         x = x + self.dropout(self.attention(
-            x, x, x,
+            x, x,
             rpe=rpe, 
             **kwargs))
+        
+        print(x.shape)
 
         # Run the fully connected part of the layer
-        y = x = self.norm1(x)
+        y = self.norm1(x)
         y = self.dropout(self.activation(self.linear1(y)))
         y = self.dropout(self.linear2(y))
 
@@ -708,6 +684,8 @@ class PerformerEncoder(tf.keras.layers.Layer):
         dim, 
         d_model, 
         max_seq_length,
+        nb_random_features,
+        attention_dropout = .1,
         num_realizations=1,
         norm_layer=None, 
         rel_pos_bins=None, 
@@ -725,6 +703,8 @@ class PerformerEncoder(tf.keras.layers.Layer):
         self.n_heads = n_heads
         self.d_model = d_model #d_ model = dim per head * n_heads
         self.kernel_size = kernel_size
+        self.nb_random_features = nb_random_features
+        self.attention_dropout = attention_dropout
         self.num_realizations = num_realizations
         self.max_seq_length = max_seq_length
         self.rel_pos_bins = rel_pos_bins #num_heads * dim
@@ -733,26 +713,34 @@ class PerformerEncoder(tf.keras.layers.Layer):
         self.spe_type = spe_type #conv/sine spe
         self.use_mask_pos = use_mask_pos #fft masking via Toeplitz matrices
 
-        def build(self, input_shape) : 
-          if self.use_mask_pos is True: 
-            self.relative_positional_bias = nn.Parameter(torch.randn(self.n_heads, 2 * rel_pos_bins - 1))
+        if self.use_mask_pos is True: 
+          self.relative_positional_bias = tf.Variable(tf.random.uniform((self.n_heads, 2 * self.rel_pos_bins - 1)))
+    
 
-          if self.spe_type== 'sine':
-            self.sine_spe = SineSPE(num_heads=self.n_heads, in_features=self.dim, num_sines=self.d_model, num_realizations=self.num_realizations)
-          elif self.spe_type == 'conv':
-            self.conv_spe = ConvSPE(self.n_heads, self.dim, self.d_model, self.kernel_size)
+        self.layers = [PerformerBlock(Attention(hidden_size=self.d_model,
+          num_heads = self.n_heads,
+          nb_random_features = self.nb_random_features,
+       # feature_redraw_interval = 1000,
+       # generalized_attention = False,
+          attention_dropout = self.attention_dropout,
+          use_rot_emb = self.use_rot_emb,
+          use_spe = self.use_spe,
+          use_mask_pos = self.use_mask_pos,
+          max_seq_length = self.max_seq_length,
+      ), d_model = self.d_model) for i in range(self.num_layers)] 
 
-          if self.use_rot_emb is True: 
+        if self.spe_type== 'sine':
+          self.sine_spe = SineSPE(num_heads=self.n_heads, in_features=self.dim, num_sines=self.d_model, num_realizations=self.num_realizations)
+        if self.spe_type == 'conv':
+          self.conv_spe = ConvSPE(self.n_heads, self.dim, self.d_model, self.kernel_size)
+
+        if self.use_rot_emb is True: 
             self.pos_emb = FixedPositionalEmbedding(self.d_model, self.max_seq_length)
-            self.layer_pos_emb = FixedPositionalEmbedding(self.dim, self.max_seq_length)
-
-          self.layers = [PerformerBlock() for i in range(self.num_layers)] #fix the hparams 
-           
-        
-
+            self.layer_pos_emb = FixedPositionalEmbedding(self.dim, self.max_seq_length)       
+    #TODO: DEF BUILD IS NOT WORKING 
+    
     def call(self, x, rpe=None, **kwargs):
         """Apply all transformer encoder layers to the input x.
-
         Arguments
         ---------
             x: The input features of shape (N, L, E) where N is the batch size,
@@ -768,25 +756,28 @@ class PerformerEncoder(tf.keras.layers.Layer):
         #TODO: ADD in attention mask if there is a PAD token 
 
         if self.use_mask_pos is True:
+            print(self.relative_positional_bias.shape)
             if L <= self.rel_pos_bins:
                 rpe = tf.concat((tf.expand_dims(self.relative_positional_bias[:,0], axis=1), 
                                 self.relative_positional_bias[:,self.rel_pos_bins-L: self.rel_pos_bins+L-1]), axis=1)
             else:
-                rpe = tf.concat((tf.expand_dims(self.relative_positional_bias[:,0], axis=1).repeat(1,L-self.rel_pos_bins+1), 
+                rpe = tf.concat([tf.repeat(tf.expand_dims(self.relative_positional_bias[:,0], axis=1), repeats= L-self.rel_pos_bins+1, axis=1), 
                             self.relative_positional_bias,
-                            tf.expand_dims(self.relative_positional_bias[:,-1], axis=1).repeat(1,L-self.rel_pos_bins)), axis=1)
+                            tf.repeat(tf.expand_dims(self.relative_positional_bias[:,-1], axis=1), repeats=L-self.rel_pos_bins, axis=1)], axis=1)
 
-        elif self.use_spe is True:   
+        if self.use_spe is True:   
             if self.spe_type == 'sine':
                 rpe = self.sine_spe((self.n_heads, self.max_seq_length))
             elif self.spe_type == 'conv':  #conv gives poor results
                 rpe = self.conv_spe(self.n_heads, self.dim)
             else:
                 raise ValueError('spe_type not supported')
-        else:   
-         # we assume that L is the max seq length
+
+        if self.use_rot_emb is True:
             x += self.pos_emb(x)
             rpe = self.layer_pos_emb(x)
+
+       
 
         # Apply all the transformers
         for layer in self.layers:
