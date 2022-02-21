@@ -4,3 +4,5 @@ numpy==1.19.5
 pandas
 tensorflow==2.4.1
 tensorflow-hub==0.11.0
+tensorflow-addons
+einops

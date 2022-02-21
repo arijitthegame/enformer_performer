@@ -1,19 +1,3 @@
-# Enformer
-
-This package provides an implementation of the Enformer model and examples on
-running the model.
-
-If this source code or accompanying files are helpful for your research please
-cite the following publication:
-
-"Effective gene expression prediction from sequence by integrating long-range
-interactions"
-
-Žiga Avsec, Vikram Agarwal, Daniel Visentin, Joseph R. Ledsam,
-Agnieszka Grabska-Barwinska, Kyle R. Taylor, Yannis Assael, John Jumper,
-Pushmeet Kohli, David R. Kelley
-
-## Setup
 
 Requirements:
 
@@ -23,9 +7,21 @@ Requirements:
 *   pandas (1.2.3)
 *   tensoflow (2.4.1)
 *   tensorflow-hub (0.11.0)
+*   tensorflow-addons
 
 See `requirements.txt`.
 
+
+
+## Adding in the FAVORPLUS mechanism and an option to switch to the fast attention. 
+
+#TODO : ADD PE 
+
+#TODO: REDO Experiments amd plots below
+
+
+
+------------------------
 To run the unit test:
 
 ```shell
@@ -147,5 +143,4 @@ This colab shows how to:
 
 This is not an official Google product.
 
-## Adding in the FAVORPLUS mechanism and an option to switch to the fast attention. 
 
