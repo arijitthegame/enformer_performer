@@ -410,7 +410,9 @@ class Attention(tf.keras.layers.Layer):
                use_rot_emb = False,
                use_spe = False,
                use_mask_pos = False,
-               eps = 1e-6):
+               eps = 1e-6,
+               normalize = False
+               ):
     """Initialize Attention.
     Args:
       hidden_size: int, output dim of hidden layer.
@@ -444,6 +446,7 @@ class Attention(tf.keras.layers.Layer):
     self.use_spe = use_spe
     self.use_mask_pos = use_mask_pos
     self.eps = eps
+    self.normalize = normalize
 
 ## Removed projection matrix type since the call is throwing issues
 
@@ -554,6 +557,9 @@ class Attention(tf.keras.layers.Layer):
     if self.use_mask_pos is True:
       create_kernel = partial(softmax_kernel_transformation, projection_matrix = projection_matrix)
       q, k = map(lambda t: rearrange(t, 'b n h d -> b h n d', h = h), (q, k))
+      if self.normalize: 
+        q = tf.math.l2_normalize(q,axis=-1)
+        k = tf.math.l2_normalize(k,axis=-1)
       q = create_kernel(q, is_query = True)
       k = create_kernel(k, is_query = False)
  
@@ -694,6 +700,7 @@ class PerformerEncoder(tf.keras.layers.Layer):
         kernel_size=None, 
         use_rot_emb = False,
         use_mask_pos = False, 
+        normalize = False #normalize keys/queries
         ):
 
         super(PerformerEncoder, self).__init__()
@@ -712,6 +719,7 @@ class PerformerEncoder(tf.keras.layers.Layer):
         self.use_spe = use_spe #gated mechanism for positional embeddings using conv or sine 
         self.spe_type = spe_type #conv/sine spe
         self.use_mask_pos = use_mask_pos #fft masking via Toeplitz matrices
+        self.normalize = normalize
 
         if self.use_mask_pos is True: 
           self.relative_positional_bias = tf.Variable(tf.random.uniform((self.n_heads, 2 * self.rel_pos_bins - 1)))
@@ -727,6 +735,7 @@ class PerformerEncoder(tf.keras.layers.Layer):
           use_spe = self.use_spe,
           use_mask_pos = self.use_mask_pos,
           max_seq_length = self.max_seq_length,
+          normalize = self.normalize
       ), d_model = self.d_model) for i in range(self.num_layers)] 
 
         if self.spe_type== 'sine':
