@@ -193,7 +193,7 @@ class final_pointwise(tf.keras.layers.Layer):
 ## This is the main class that will be used to create the model. Tested all the above classes and they work as desired.
 
 #TODO: FINISH THIS CLASS
-class FastEnformer(tf.keras.layers.Layer) :
+class FastEnformer(tf.keras.Model) :
     def __init__(self, channels: int = 1536,
                num_transformer_layers: int = 11,
                num_conv_layers: int = 6,
