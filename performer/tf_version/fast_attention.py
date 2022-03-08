@@ -1,22 +1,5 @@
-# coding=utf-8
-# Copyright 2021 The Google Research Authors.
-#
-# Licensed under the Apache License, Version 2.0 (the "License");
-# you may not use this file except in compliance with the License.
-# You may obtain a copy of the License at
-#
-#     http://www.apache.org/licenses/LICENSE-2.0
-#
-# Unless required by applicable law or agreed to in writing, software
-# distributed under the License is distributed on an "AS IS" BASIS,
-# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
-# See the License for the specific language governing permissions and
-# limitations under the License.
+# pylint: skip-file
 
-"""Implementation of multiheaded FAVOR-attention & FAVOR-self-attention layers.
-
-Prefix Sum Tensorflow implementation by Valerii Likhosherstov.
-"""
 import math
 import numpy as np
 import tensorflow as tf
@@ -646,11 +629,12 @@ class PerformerBlock(tf.keras.layers.Layer):
         super(PerformerBlock, self).__init__()
 
 
-        d_ff = 4*d_model
+        d_ff = 2*d_model #used in enformer, generally 4*d_model
         self.attention = attention
         self.linear1 = tf.keras.layers.Dense(d_ff)
         self.linear2 = tf.keras.layers.Dense(d_model)
-        self.norm1 = tf.keras.layers.LayerNormalization()
+        self.norm1 = tf.keras.layers.LayerNormalization(axis=-1, epsilon=0.001, center=True, scale=True,
+                        beta_initializer='zeros', gamma_initializer='ones')
         self.norm2 = tf.keras.layers.LayerNormalization()
         self.dropout = tf.keras.layers.Dropout(dropout)
         self.activation = getattr(tf.keras.activations, activation)
@@ -674,7 +658,6 @@ class PerformerBlock(tf.keras.layers.Layer):
             rpe=rpe, 
             **kwargs))
         
-        print(x.shape)
 
         # Run the fully connected part of the layer
         y = self.norm1(x)
