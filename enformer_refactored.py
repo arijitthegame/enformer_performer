@@ -152,7 +152,7 @@ class pointwise_conv_block(tf.keras.layers.Layer):
 class conv_tower(tf.keras.layers.Layer):
     def __init__(self, channels: int, num_layers = 6, divisible_by = 128, width=5, padding = 'same', pool_size = 2, pooling_type : str = 'attention', **kwargs):
         super(conv_tower, self).__init__()
-        self.channels = channels
+        self.channels = channels 
         self.num_layers = num_layers
         self.divisible_by = divisible_by
         self.width = width
@@ -198,6 +198,7 @@ class FastEnformer(tf.keras.layers.Layer) :
                num_transformer_layers: int = 11,
                num_conv_layers: int = 6,
                num_heads: int = 8,
+               dropout_rate = .4
                pooling_type: str = 'attention',
                hidden_size = 256,
                attention_dropout = .2,
@@ -222,6 +223,7 @@ class FastEnformer(tf.keras.layers.Layer) :
         self.channels = channels
         self.num_transformer_layers = num_transformer_layers
         self.num_conv_layers = num_conv_layers
+        self.dropout_rate = dropout_rate
         self.num_heads = num_heads
         self.pooling_type = pooling_type
         self.hidden_size = hidden_size
@@ -243,18 +245,36 @@ class FastEnformer(tf.keras.layers.Layer) :
         self.use_mask_pos = use_mask_pos
         self.normalize = normalize
 
-        self.stem = stem(self.channels)
-        self.conv_tower = conv_tower(self.channels, num_layers=self.num_conv_layers)
-        self.final_pointwise = final_pointwise(self.channels)
-        self.transformer = PerformerEncoder(**kwargs)
-        self.crop_final = TargetLengthCrop1D(TARGET_LENGTH, name='target_input'
-        self.final_pointwise = final_pointwise(self.channels)
+        self.heads_channels = {'human': 5313, 'mouse': 1643}
 
-    def call(self, inputs):
-        x = self.conv_tower(inputs)
+        self.stem = stem(self.channels)
+        self.conv_tower = conv_tower(self.channels//2, num_layers=self.num_conv_layers)
+        self.final_pointwise = final_pointwise(self.channels, num_layers=self.num_conv_layers)
+        self.transformer = PerformerEncoder(num_layers=self.num_transformer_layers, n_heads=self.num_heads, d_model=channels//2, dim = channels//(2*self.num_heads), \
+                                        max_seq_length=SEQUENCE_LENGTH//(2**7), nb_random_features=self.nb_random_features, self.rel_pos_bins=self.rel_pos_bins, \
+                                        use_spe=self.use_spe, spe_type=self.spe_type, kernel_size=self.kernel_size, use_rot_emb=self.use_rot_emb, use_mask_pos=self.use_mask_pos, normalize=self.normalize)
+        self.crop_final = TargetLengthCrop1D(TARGET_LENGTH, name='target_input')
+        self.final_pointwise = final_pointwise(self.channels, dropout=self.dropout_rate)
+        self.human_head = tf.keras.layers.Dense(num_channels, activation='softplus')
+        with tf.name_scope('heads'):
+            self._heads = {
+             head: tf.keras.Sequential(
+              [tf.keras.layers.Dense(num_channels, activation='softplus')],
+              name=f'head_{head}')
+          for head, num_channels in self.heads_channels.items()
+      }
+
+    def call(self, inputs, training:bool = True):
+        x = self.stem(inputs)
+        x = self.conv_tower(x)
+        x = self.transformer(x, training=training)
+        x = self.crop_final(x)
         x = self.final_pointwise(x)
-        x = self.norm(x)
-        return x
+    
+        return {
+        head: head_module(trunk_embedding, training=training)
+        for head, head_module in self.heads.items()
+    }
 
 
 
