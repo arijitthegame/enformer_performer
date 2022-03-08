@@ -748,7 +748,7 @@ class PerformerEncoder(tf.keras.layers.Layer):
         #TODO: ADD in attention mask if there is a PAD token 
 
         if self.use_mask_pos is True:
-            print(self.relative_positional_bias.shape)
+    
             if L <= self.rel_pos_bins:
                 rpe = tf.concat((tf.expand_dims(self.relative_positional_bias[:,0], axis=1), 
                                 self.relative_positional_bias[:,self.rel_pos_bins-L: self.rel_pos_bins+L-1]), axis=1)
