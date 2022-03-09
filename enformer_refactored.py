@@ -250,12 +250,12 @@ class FastEnformer(tf.keras.Model) :
         self.stem = stem(self.channels)
         self.conv_tower = conv_tower(self.channels//2, num_layers=self.num_conv_layers)
         self.final_pointwise = final_pointwise(self.channels, num_layers=self.num_conv_layers)
-        self.transformer = PerformerEncoder(num_layers=self.num_transformer_layers, n_heads=self.num_heads, d_model=channels//2, dim = channels//(2*self.num_heads), \
+        self.transformer = PerformerEncoder(num_layers=self.num_transformer_layers, n_heads=self.num_heads, d_model=channels, dim = 32, \
                                         max_seq_length=SEQUENCE_LENGTH//(2**7), nb_random_features=self.nb_random_features, self.rel_pos_bins=self.rel_pos_bins, \
                                         use_spe=self.use_spe, spe_type=self.spe_type, kernel_size=self.kernel_size, use_rot_emb=self.use_rot_emb, use_mask_pos=self.use_mask_pos, normalize=self.normalize)
         self.crop_final = TargetLengthCrop1D(TARGET_LENGTH, name='target_input')
         self.final_pointwise = final_pointwise(self.channels, dropout=self.dropout_rate)
-        self.human_head = tf.keras.layers.Dense(num_channels, activation='softplus')
+      
         with tf.name_scope('heads'):
             self._heads = {
              head: tf.keras.Sequential(
@@ -272,10 +272,7 @@ class FastEnformer(tf.keras.Model) :
         x = self.final_pointwise(x)
     
         return {
-        head: head_module(trunk_embedding, training=training)
-        for head, head_module in self.heads.items()
+        head: head_module(x, training=training)
+        for head, head_module in self._heads.items()
     }
-
-
-
-       
+ 
