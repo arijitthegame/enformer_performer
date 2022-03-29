@@ -198,7 +198,7 @@ class FastEnformer(tf.keras.Model) :
                num_transformer_layers: int = 11,
                num_conv_layers: int = 6,
                num_heads: int = 8,
-               dropout_rate = .4
+               dropout_rate = .4,
                pooling_type: str = 'attention',
                hidden_size = 256,
                attention_dropout = .2,
@@ -249,9 +249,8 @@ class FastEnformer(tf.keras.Model) :
 
         self.stem = stem(self.channels)
         self.conv_tower = conv_tower(self.channels//2, num_layers=self.num_conv_layers)
-        self.final_pointwise = final_pointwise(self.channels, num_layers=self.num_conv_layers)
         self.transformer = PerformerEncoder(num_layers=self.num_transformer_layers, n_heads=self.num_heads, d_model=channels, dim = 32, \
-                                        max_seq_length=SEQUENCE_LENGTH//(2**7), nb_random_features=self.nb_random_features, self.rel_pos_bins=self.rel_pos_bins, \
+                                        max_seq_length=SEQUENCE_LENGTH//(2**7), nb_random_features=self.nb_random_features, rel_pos_bins=self.rel_pos_bins, \
                                         use_spe=self.use_spe, spe_type=self.spe_type, kernel_size=self.kernel_size, use_rot_emb=self.use_rot_emb, use_mask_pos=self.use_mask_pos, normalize=self.normalize)
         self.crop_final = TargetLengthCrop1D(TARGET_LENGTH, name='target_input')
         self.final_pointwise = final_pointwise(self.channels, dropout=self.dropout_rate)
