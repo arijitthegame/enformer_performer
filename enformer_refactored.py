@@ -1,14 +1,13 @@
 # pylint: skip-file
 
 import inspect
-from typing import Any, Callable, Dict, Optional, Text, Union, Iterable
-
+from typing import Any, Callable, Dict, Iterable, Optional, Text, Union
 
 import numpy as np
 import tensorflow as tf
 import tensorflow_addons as tfa
-from performer.tf_version import fast_attention
 
+from performer.tf_version import fast_attention
 
 SEQUENCE_LENGTH = 196_608
 BIN_SIZE = 128
@@ -194,7 +193,8 @@ class final_pointwise(tf.keras.layers.Layer):
 
 #TODO: FINISH THIS CLASS
 class FastEnformer(tf.keras.Model) :
-    def __init__(self, channels: int = 1536,
+    def __init__(self, dim, d_model, 
+              channels: int = 1536,
                num_transformer_layers: int = 11,
                num_conv_layers: int = 6,
                num_heads: int = 8,
@@ -206,18 +206,16 @@ class FastEnformer(tf.keras.Model) :
                numerical_stabilizer = 0.001,
                causal = False,
                nb_random_features = 64, 
-               dim, 
-               d_model, 
-               max_seq_length
+               max_seq_length,
                num_realizations=1,
                norm_layer=None, 
                rel_pos_bins=None, 
                use_spe=False, 
                spe_type=None, 
                kernel_size=None, 
-                use_rot_emb = False,
-            use_mask_pos = False, 
-            normalize = False
+              use_rot_emb = False,
+              use_mask_pos = False, 
+              normalize = False
     ):
         super(FastEnformer, self).__init__()
         self.channels = channels
@@ -246,11 +244,12 @@ class FastEnformer(tf.keras.Model) :
         self.normalize = normalize
 
         self.heads_channels = {'human': 5313, 'mouse': 1643}
+        self.early_conv_layer_nums = self.num_conv_layers + 1
 
         self.stem = stem(self.channels)
         self.conv_tower = conv_tower(self.channels//2, num_layers=self.num_conv_layers)
-        self.transformer = PerformerEncoder(num_layers=self.num_transformer_layers, n_heads=self.num_heads, d_model=channels, dim = 32, \
-                                        max_seq_length=SEQUENCE_LENGTH//(2**7), nb_random_features=self.nb_random_features, rel_pos_bins=self.rel_pos_bins, \
+        self.transformer = PerformerEncoder(num_layers=self.num_transformer_layers, n_heads=self.num_heads, d_model=self.channels, dim = self.dim, \
+                                        max_seq_length=SEQUENCE_LENGTH//(2**(self.early_conv_layer_nums)), nb_random_features=self.nb_random_features, rel_pos_bins=self.rel_pos_bins, \
                                         use_spe=self.use_spe, spe_type=self.spe_type, kernel_size=self.kernel_size, use_rot_emb=self.use_rot_emb, use_mask_pos=self.use_mask_pos, normalize=self.normalize)
         self.crop_final = TargetLengthCrop1D(TARGET_LENGTH, name='target_input')
         self.final_pointwise = final_pointwise(self.channels, dropout=self.dropout_rate)
