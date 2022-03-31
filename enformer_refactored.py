@@ -188,10 +188,6 @@ class final_pointwise(tf.keras.layers.Layer):
         x = self.dropout(x)
         return self.norm(x)
 
-
-## This is the main class that will be used to create the model. Tested all the above classes and they work as desired.
-
-#TODO: FINISH THIS CLASS
 class FastEnformer(tf.keras.Model) :
     ''''
     MAIN MODEL
