@@ -729,7 +729,7 @@ class PerformerEncoder(tf.keras.layers.Layer):
         if self.use_rot_emb is True: 
             self.pos_emb = FixedPositionalEmbedding(self.d_model, self.max_seq_length)
             self.layer_pos_emb = FixedPositionalEmbedding(self.dim, self.max_seq_length)       
-    #TODO: DEF BUILD IS NOT WORKING 
+    
     
     def call(self, x, rpe=None, **kwargs):
         """Apply all transformer encoder layers to the input x.
