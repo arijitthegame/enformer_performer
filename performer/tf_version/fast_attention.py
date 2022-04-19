@@ -570,7 +570,7 @@ class Attention(tf.keras.layers.Layer):
         # Finally compute and return the new values
         # Equivalent to V = torch.einsum("nlhd,nhmdl,nhl->nlhm", Q, weighted_KV, Z)
       attention_output = tf.einsum("nlhd,nhmdl,nhl->nlhm", q, weighted_kv, Z)
-      attention_output = rearrange(attention_output, 'b n h d -> b n (h d)')
+ #     attention_output = rearrange(attention_output, 'b n h d -> b n (h d)') #this step differs from the pytorch version
             
 
 # Cache does not work with the spe.
@@ -598,8 +598,8 @@ class Attention(tf.keras.layers.Layer):
     if self.use_mask_pos is False:
       attention_output = favor_attention(q, k, v,
                                        self.kernel_transformation, self.causal,
-                                       projection_matrix)
-      attention_output = rearrange(attention_output, 'b h n d -> b n (h d)')
+                                       projection_matrix) # shape = [b n h d]
+    #  attention_output = rearrange(attention_output, 'b h n d -> b n (h d)')
 
     attention_output = self.output_dense_layer(attention_output)
     return attention_output
