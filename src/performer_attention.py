@@ -441,3 +441,6 @@ class Attention(nn.Module):
         #print("attn2", attention_output.shape)
         return attention_output, k_prime, q_prime
 
+class SelfAttention(Attention):
+    def forward(self, query_input, rpe):
+        return super().forward(query_input, rpe)
