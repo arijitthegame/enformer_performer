@@ -6,6 +6,7 @@ import torch.nn.functional as F
 from einops import rearrange, repeat
 from functools import partial
 from distutils.version import LooseVersion
+import util
 
 TORCH_GE_1_8_0 = LooseVersion(torch.__version__) >= LooseVersion('1.8.0')
 
@@ -291,6 +292,7 @@ class Attention(nn.Module):
                 .format(hidden_size, num_heads))
 
         super(Attention, self).__init__()
+        self.input_shape = input_shape
         self.hidden_size = hidden_size
         self.num_heads = num_heads
         self.kernel_transformation = kernel_transformation
@@ -314,9 +316,25 @@ class Attention(nn.Module):
         self.create_projection = partial(gaussian_orthogonal_random_matrix, m = self.nb_random_features, d = self.dim_heads, scaling = self.scaling)
         projection_matrix = self.create_projection()
         self.register_buffer('projection_matrix', projection_matrix)
-        self.query_dense_layer = None
-        self.key_dense_layer = None
-        self.value_dense_layer = None
+        self.query_dense_layer = util.DenseEinsum(input_shape=self.input_shape, 
+                                                  output_shape=(self.num_heads, dim_heads),
+                                                  kernel_initializer=self.q_init if self.load_init else torch.nn.init.xavier_uniform_,
+                                                  use_bias=False)
+        self.key_dense_layer = util.DenseEinsum(input_shape=self.input_shape, 
+                                                  output_shape=(self.num_heads, dim_heads),
+                                                  kernel_initializer=self.k_init if self.load_init else torch.nn.init.xavier_uniform_,
+                                                  use_bias=False)
+        self.value_dense_layer = util.DenseEinsum(input_shape=self.input_shape, 
+                                                  output_shape=(self.num_heads, dim_heads),
+                                                  kernel_initializer=self.v_init if self.load_init else torch.nn.init.xavier_uniform_,
+                                                  use_bias=False)
+        
+        self.output_dense_layer = util.DenseEinsum(
+                output_shape=self.hidden_size,
+                num_summed_dimensions=2,
+                 kernel_initializer=self.att_output if self.load_init else torch.nn.init.xavier_uniform_,
+                use_bias=False,
+                  )
 
     def forward(self,
            query_input,
@@ -347,9 +365,9 @@ class Attention(nn.Module):
         b, n, _ = query_input.shape
         h = self.num_heads
 
-        q = tf.cast(self.query_dense_layer(query_input),dtype=tf.float32)
-        k = tf.cast(self.key_dense_layer(source_input),dtype=tf.float32)
-        v = tf.cast(self.value_dense_layer(source_input),dtype=tf.float32)
+        q = self.query_dense_layer(query_input)
+        k = self.key_dense_layer(source_input)
+        v = self.value_dense_layer(source_input)
         
         if self.kernel_transformation == 'relu_kernel_transformation':
             kernel_transform = relu_kernel_transformation
@@ -365,46 +383,43 @@ class Attention(nn.Module):
         if self.use_mask_pos is True:
 
             create_kernel = partial(kernel_transform, projection_matrix= self.projection_matrix)
-            q, k = map(lambda t: tf.transpose(t, [0,2,1,3]), (q,k))
-
+            q, k = map(lambda t: torch.permute(t, (0,2,1,3)), (q,k))
                        #rearrange(t, 'b n h d -> b h n d', h = h), (q, k))
             if self.normalize: 
-                q = tf.math.l2_normalize(q,axis=-1)
-                k = tf.math.l2_normalize(k,axis=-1)
+                q = F.normalize(q, dim=-1)
+                k = F.normalize(k, dim=-1)
             q_prime = create_kernel(q, is_query = True)
             k_prime = create_kernel(k, is_query = False)
             #k_prime = rearrange(k_prime, 'b h n d -> b h d n', h=h) #(batch, head, dim_head, seq_len) ([1, 8, 1000, 16])
-            k_prime = tf.transpose(k_prime, [0,1,3,2])
+            k_prime = torch.permute(k_prime, (0,1,3,2))
             #q_prime = rearrange(q_prime, 'b h n d -> b n h d', h=h)
-            q_prime = tf.transpose(q_prime, [0,2,1,3])
+            q_prime = torch.permute(q_prime, (0,2,1,3))
 
-            kv = tf.einsum("nhdl,nlhm->nhmdl", k_prime, v)
+            kv = torch.einsum("nhdl,nlhm->nhmdl", k_prime, v)
 
             # Efficient matrix multiplication
-            u = tf.signal.rfft(tf.cast(rpe,dtype=tf.float32))          #rpe.shape = [num_heads, 2*tgt_len]
+            u = torch.fft.rfft(rpe)          #rpe.shape = [num_heads, 2*tgt_len]
             #print("u", u.shape)
 
-            y = tf.signal.rfft(tf.cast(kv, dtype=tf.float32),
-                               fft_length=[2*tgt_len]) #KV.shape  = [bsz, num_heads, v_dim, k_dim, tgt_len]  
-            y = tf.einsum("hl,nhmdl->nhmdl", u, y)
-            weighted_kv = tf.cast(tf.signal.irfft(y)[:, :,:,:,tgt_len:],dtype=tf.float32)
+            y = torch.fft.rfft(kv, n=2*tgt_len) #KV.shape  = [bsz, num_heads, v_dim, k_dim, tgt_len]  
+            y = torch.einsum("hl,nhmdl->nhmdl", u, y)
+            weighted_kv = torch.fft.irfft(y)[:, :,:,:,tgt_len:]
 
-            y1= tf.signal.rfft(tf.cast(k_prime,dtype=tf.float32) ,
-                               fft_length=[2*tgt_len]) #k.shape  = [bsz, num_heads, k_dim, tgt_len]
+            y1= torch.rfft(k_prime, n=2*tgt_len) #k.shape  = [bsz, num_heads, k_dim, tgt_len]
 
-            y1 = tf.einsum("hl,nhdl->nhdl", u, y1)
-            weighted_k = tf.cast(tf.signal.irfft(y1)[:, :,:,tgt_len:],dtype=tf.float32)
+            y1 = torch.einsum("hl,nhdl->nhdl", u, y1)
+            weighted_k = torch.fft.irfft(y1)[:, :,:,tgt_len:]
             #print("weighted k", weighted_k.shape)
 
             # Compute the normalizer
-            Z = 1/(tf.einsum("nlhd,nhdl->nlh", q_prime, weighted_k) + self.eps)
+            Z = 1/(torch.einsum("nlhd,nhdl->nlh", q_prime, weighted_k) + self.eps)
             #Z = rearrange(Z, 'n l h -> n h l') #transpose by keeping the batch dim fixed
-            Z = tf.transpose(Z, [0,2,1])
+            Z = torch.permute(Z, (0,2,1))
             #print("Z rearrange", Z.shape)
 
             # Finally compute and return the new values
             # Equivalent to V = torch.einsum("nlhd,nhmdl,nhl->nlhm", Q, weighted_KV, Z)
-            attention_output = tf.einsum("nlhd,nhmdl,nhl->nlhm", q_prime, weighted_kv, Z)
+            attention_output = torch.einsum("nlhd,nhmdl,nhl->nlhm", q_prime, weighted_kv, Z)
             # attention_output = rearrange(attention_output, 'b n h d -> b n (h d)')
             #print("attention_output rearrange", attention_output.shape)
 

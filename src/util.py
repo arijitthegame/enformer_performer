@@ -87,11 +87,17 @@ class DenseEinsum(nn.Module):
             self._bias = None
 
 # initilaize the weights and bias
-        nn.init.kaiming_uniform_(self._kernel, a=math.sqrt(5)) # weight init
+        if self.kernel_initializer is None :
+          nn.init.kaiming_uniform_(self._kernel, a=math.sqrt(5)) 
+        else :
+          self.kernel_initializer(self._kernel)
         if self._bias is not None :
-          fan_in, _ = nn.init._calculate_fan_in_and_fan_out(self._kernel)
-          bound = 1 / math.sqrt(fan_in)
-          nn.init.uniform_(self._bias, -bound, bound)
+          if self._bias_initializer is None :
+            fan_in, _ = nn.init._calculate_fan_in_and_fan_out(self._kernel)
+            bound = 1 / math.sqrt(fan_in)
+            nn.init.uniform_(self._bias, -bound, bound)
+          else :
+              self._bias_initializer(self._bias)
 
     def cast_inputs(self, inputs):
         pass
