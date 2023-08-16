@@ -22,7 +22,6 @@ def orthogonal_matrix_chunk(cols, device = None):
     q, r = map(lambda t: t.to(device), (q, r))
     return q.t()
 
-#TODO 
 def create_products_of_givens_rotations(dim, seed, device = None):
     r"""Constructs a 2D-tensor which is a product of Givens random rotations.
   Constructs a 2D-tensor of the form G_1 * ... * G_k, where G_i is a Givens
@@ -36,10 +35,12 @@ def create_products_of_givens_rotations(dim, seed, device = None):
   """
     nb_givens_rotations = dim * int(math.ceil(math.log(float(dim))))
     q = torch.eye(dim, dim).to(device)
-    np.random.seed(seed)
+    torch.manual_seed(seed)
     for _ in range(nb_givens_rotations):
         random_angle = math.pi * np.random.uniform()
+        # print(random_angle)
         random_indices = np.random.choice(dim, 2)
+        # print(random_indices)
         index_i = min(random_indices[0], random_indices[1])
         index_j = max(random_indices[0], random_indices[1])
         slice_i = q[index_i]
@@ -50,7 +51,7 @@ def create_products_of_givens_rotations(dim, seed, device = None):
             random_angle) * slice_j
         q[index_i] = new_slice_i
         q[index_j] = new_slice_j
-    return tf.cast(tf.constant(q), dtype=tf.float32)
+    return q
 
 
 def gaussian_orthogonal_random_matrix(m, d, scaling = 0, device = None, struct_mode=False):
