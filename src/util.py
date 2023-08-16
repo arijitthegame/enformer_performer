@@ -1,5 +1,6 @@
 # adding a dense einsum layer. Note this is very different from how the pytorch og code works
 
+import math
 import torch
 from torch import nn
 
@@ -50,11 +51,11 @@ class DenseEinsum(nn.Module):
                kernel_constraint=None,
                bias_constraint=None,
                **kwargs):
-        super(DenseEinsum, self).__init__(**kwargs)
+        super().__init__()
 
         self._output_shape = output_shape if isinstance(
             output_shape, (list, tuple)) else (output_shape,)
-        self._activation = tf.keras.activations.get(activation)
+        self._activation = activation
         self._use_bias = use_bias
         self._kernel_initializer = kernel_initializer
         self._bias_initializer = bias_initializer
@@ -75,30 +76,22 @@ class DenseEinsum(nn.Module):
                                                         output_dims)
 
         # This is only saved for testing purposes.
-        self._kernel_shape = (
-            input_shape[free_input_dims:].concatenate(self._output_shape))
 
-        self._kernel = self.add_weight(
-            "kernel",
-            shape=self._kernel_shape,
-            initializer=self._kernel_initializer,
-            regularizer=self._kernel_regularizer,
-            constraint=self._kernel_constraint,
-            dtype=self.dtype,
-            trainable=True)
+        self._kernel = torch.Tensor(input_shape[free_input_dims:], self._output_shape)
+        self._kernel = nn.Parameter(self._kernel)
         
         if self._use_bias:
-            self._bias = self.add_weight(
-                "bias",
-                shape=self._output_shape,
-                initializer=self._bias_initializer,
-                regularizer=self._bias_regularizer,
-                constraint=self._bias_constraint,
-                dtype=self.dtype,
-                trainable=True)
+            self._bias = torch.Tensor(self._output_shape)
+            self._bias = nn.Parameter(self._bias)
         else:
             self._bias = None
 
+# initilaize the weights and bias
+        nn.init.kaiming_uniform_(self._kernel, a=math.sqrt(5)) # weight init
+        if self._bias is not None :
+          fan_in, _ = nn.init._calculate_fan_in_and_fan_out(self._kernel)
+          bound = 1 / math.sqrt(fan_in)
+          nn.init.uniform_(self._bias, -bound, bound)
 
     def cast_inputs(self, inputs):
         pass
