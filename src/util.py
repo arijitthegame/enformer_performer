@@ -134,3 +134,31 @@ class DenseEinsum(nn.Module):
         if self._activation is not None:
             ret = self._activation(ret)
         return ret
+    
+
+def sinusoidal(input_shape):
+    '''
+    Generates sinusoidal PE as in Vasvani et al. 2017 given an input_shape
+    where input_shape[-2] is the sequence length and input_shape[-1] is the
+    channel dimension
+    
+    '''
+    position = torch.arange(0, input_shape[-2], dtype = torch.float32)
+    position = torch.unsqueeze(position, 1)
+    omega = torch.exp(-(torch.arange(0,
+                                 input_shape[-1],
+                                 2, dtype=torch.float32)) * 4.0 /input_shape[-1]
+    )
+
+    even_indices = torch.sin(position * omega)
+    odd_indices = torch.cos(position * omega)
+
+    PE = torch.reshape(
+                    torch.cat((torch.unsqueeze(even_indices, 1),
+                               torch.unsqueeze(odd_indices, 1)
+                    ), 
+                      dim=-1),
+                    (even_indices.shape[0],-1)
+                    )
+
+    return PE
